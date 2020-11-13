@@ -251,7 +251,7 @@ int omx_display_xy(int flag, struct omx_state *st, int width, int height, int st
 }
 
 
-int omx_display_enable(struct omx_state *st, int width, int height, int stride)
+int omx_display_enable(struct omx_state *st, int width, int height, int stride, int displaynum)
 {
     unsigned int i;
     OMX_PARAM_PORTDEFINITIONTYPE portdef;
@@ -309,7 +309,7 @@ int omx_display_enable(struct omx_state *st, int width, int height, int stride)
     */
     config.fullscreen = 1;
     config.mode = OMX_DISPLAY_MODE_FILL; //OMX_DISPLAY_MODE_LETTERBOX;//可以在IL/OMX_Broadcom.h查找
-    config.num = 0;
+    config.num = displaynum;
     config.layer = 128;
     config.set = OMX_DISPLAY_SET_FULLSCREEN | OMX_DISPLAY_SET_DEST_RECT | OMX_DISPLAY_SET_MODE |OMX_DISPLAY_SET_LAYER | OMX_DISPLAY_SET_NUM; //(OMX_DISPLAYSETTYPE)(OMX_DISPLAY_SET_FULLSCREEN | OMX_DISPLAY_SET_MODE);
 

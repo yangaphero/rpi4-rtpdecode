@@ -99,7 +99,8 @@ void* handleVideoThread(void *params)
             frameFinished = 1;
             //下面是测试帧速率：
             frame_counter++;
-            //if(frame_counter % 30==0)  printf("frames=[%d] time=[%.0f] fps=[%.0f] queue=[%d]\n", frame_counter,difftimeval(&end, &start),frame_counter*1000/difftimeval(&end, &start),avpacket_queue_size(&userData->videoPacketFifo));
+            if(frame_counter % 25==0)  printf("frames=[%d] time=[%.0f] fps=[%.02f] queue=[%d]\n", frame_counter,difftimeval(&end, &start),frame_counter*1000/difftimeval(&end, &start),avpacket_queue_size(&userData->videoPacketFifo));
+            
             if (first_packet)
             {
                 
@@ -168,12 +169,12 @@ void* handleVideoThread(void *params)
                 printf("avcodec: avcodec_send_packet error\n");
             }
             while(ret>=0){
-
-                        ret = avcodec_receive_frame(pCodecCtx, pFrame);
-                        if (ret == AVERROR_EOF){
-                            avcodec_flush_buffers(pCodecCtx);
-                            printf("avcodec_flush_buffers!\n");
-                        }
+                printf("flush frame\n");
+                ret = avcodec_receive_frame(pCodecCtx, pFrame);
+                if (ret == AVERROR_EOF){
+                    avcodec_flush_buffers(pCodecCtx);
+                    printf("avcodec_flush_buffers!\n");
+                }
             }
             fprintf(stderr, "%s() - Info: STATE_EXIT flag has been set\n", __FUNCTION__);
             break;//退出解码循环

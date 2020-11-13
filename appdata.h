@@ -31,7 +31,13 @@ typedef struct
     AVCodecContext *decContext;    //解码器上下文AVCodecContext
 
     uint32_t playerState;  // daj na uint32_t a prepinaj bity [play,paused], [deinterlace], [mute], ...
-    char* fileName;
+
+    char* fileName;//启动参数
+    int port;
+    int timeout;
+    int decode;
+    int display;
+
     int start_flag;
     int stop_flag;
 } appData;

@@ -21,6 +21,102 @@
 #define PACKET_MAX_SIZE     1024*1024*1
 
 
+int parse_args(int argc, char** argv, appData* userData)
+{
+    int ret;
+    while (1)
+    {
+        static struct option long_options[] =
+        {
+            {"help",                             no_argument,       0, 'h'},
+            {"port",                      required_argument, 0, 'p'},
+            {"timeout",                      required_argument, 0, 't'},
+            {"decode",                      required_argument, 0, 'g'},
+            {"display",                      required_argument, 0, 'd'},
+            {0, 0, 0, 0}
+        };
+
+        /* getopt_long stores the option index here. */
+        int option_index = 0;
+
+        if (argc < 5)  // no argument given
+        {
+            ret = 'h';
+        }
+        else
+        {
+            ret = getopt_long (argc, argv, "", long_options, &option_index);
+
+            /* Detect the end of the options. */
+            if (ret == -1)
+                break;
+        }
+
+
+        switch (ret)
+        {
+            case 'h':
+                print_help:
+                fprintf (stderr, "%s <options>\n", argv[0]);
+                fprintf(stderr, "\t--help\n");
+                fprintf(stderr, "\t--port=number\n");
+                fprintf(stderr, "\t--timeout=number\n");
+
+                fprintf(stderr, "\t--decode=\e[4mtype\e[0m \n");
+                fprintf(stderr, "\t\t0 - CPU\n");
+                fprintf(stderr, "\t\t1 - GPU-0\n");
+
+                fprintf(stderr, "\t--display=\e[4mtype\e[0m \n");
+                fprintf(stderr, "\t\t0 - default\n");
+                fprintf(stderr, "\t\t2 - HDMI-0\n");
+                fprintf(stderr, "\t\t7 - HDMI-1\n");
+                return 1;
+
+            case 'p':
+                ret = atoi(optarg);
+                userData->port = ret;
+                printf("%s = %d\n",long_options[option_index].name ,ret);
+                break;
+
+
+            case 't':
+                ret = atoi(optarg);
+                userData->timeout = ret;
+                printf("%s = %d\n",long_options[option_index].name ,ret);
+                break;
+
+            case 'g':
+                ret = atoi(optarg);
+                userData->decode = ret;
+                printf("%s = %d\n",long_options[option_index].name ,ret);
+                break;
+
+            case 'd':
+                ret = atoi(optarg);
+                if (ret == 0 || ret == 2 || ret == 7)
+                {
+                    userData->display = ret;
+                    printf("%s = %d\n",long_options[option_index].name ,ret);
+                }
+                else
+                {
+                    fprintf(stderr, "%s() - Error: --%s supplied with invalid value(%d)\n", __func__, long_options[option_index].name, ret);
+                    return 1;
+                }
+                break;
+
+            case '?':
+                /* getopt_long already printed an error message. */
+                return 1;
+                break;
+
+            default:
+                fprintf (stderr, "%s() - Error: getopt returned unexpected character code %d('%c')\n", __func__, ret, ret);
+                return 1;
+        }
+    }
+    return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -39,6 +135,12 @@ int main(int argc, char **argv)
     appData *userData = (appData*) malloc(sizeof(appData));
     memset(userData, 0, sizeof(appData));
 
+    if (parse_args(argc, argv, userData) != 0)
+    {
+        //fprintf(stderr, "%s() - Error: parse_args() failed with retval %d\n", __func__, ret);
+        return 1;
+    }
+
     // 建立socket，注意必须是SOCK_DGRAM
 	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) 
     {
@@ -54,8 +156,8 @@ int main(int argc, char **argv)
 
     //设置接收超时
     struct timeval tv_out;
-    tv_out.tv_sec = 0;//等待2秒
-    tv_out.tv_usec = 1000*300;
+    tv_out.tv_sec = userData->timeout;//等待2秒
+    tv_out.tv_usec = 1000*500;
     if(setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO,&tv_out, sizeof(tv_out)) == -1)
     {  
         fprintf(stderr, "[%s@%s,%d]:socket setsockopt error\n",__func__, __FILE__, __LINE__);
@@ -64,7 +166,7 @@ int main(int argc, char **argv)
     //绑定本地端口
     struct sockaddr_in local;  
     local.sin_family=AF_INET;  
-    local.sin_port=htons(42000);            ///监听端口  
+    local.sin_port=htons(userData->port);            ///监听端口  
     local.sin_addr.s_addr=INADDR_ANY;       ///本机  
     if(bind(sockfd,(struct sockaddr*)&local,sizeof(local))==-1) 
     {
@@ -74,8 +176,15 @@ int main(int argc, char **argv)
 
     //初始化解码器,不打开
     //avcodec_register_all();//过时不用了
-    videoCodec = avcodec_find_decoder(AV_CODEC_ID_H264);
-    //videoCodec = avcodec_find_decoder_by_name("h264_mmal");
+    if (userData->decode == 1)
+    {
+        videoCodec = avcodec_find_decoder_by_name("h264_mmal");
+    }
+    else
+    {
+        videoCodec = avcodec_find_decoder(AV_CODEC_ID_H264);
+    }
+
     if (videoCodec == NULL)
     {
 	    fprintf(stderr, "Unsupported video codec!\n");
@@ -112,7 +221,7 @@ int main(int argc, char **argv)
             if(recv_len>12)	UnpackRTPH264(buffer,recv_len,&rtp_packet);//收到的是分片，没有重新组包
             if(rtp_packet.outlen<=0)   continue;//跳过空包，在重组包时可能有问题
 
-            //下面根据序号检查时候丢包
+            //下面根据序号检查时候丢包, 存在段错误现象，如果从中间读数据
             if(before_seq!=0)
             {
                 //printf("seq=%d before_seq=%d nal=%d\n",rtp_packet.seq, before_seq, rtp_packet.nal);
@@ -294,7 +403,7 @@ int main(int argc, char **argv)
 
             printf("3-正在打开渲染设备:\n");
 
-            if (omx_display_enable(userData->omxState,	userData->decContext->width, userData->decContext->height, userData->decContext->width) != 0)
+            if (omx_display_enable(userData->omxState,	userData->decContext->width, userData->decContext->height, userData->decContext->width, userData->display) != 0)
             {
                 printf("Could not open OpenMAX\n");
             }
@@ -302,6 +411,7 @@ int main(int argc, char **argv)
             printf("4-正在打开解码线程:\n");
             if (userData->playerState & STATE_HAVEVIDEO)  pthread_create(&userData->videoThreadId, NULL, &handleVideoThread, userData);
             
+            userData->stop_flag=0;
             printf("5-全部打开完毕:\n");
         }
     
