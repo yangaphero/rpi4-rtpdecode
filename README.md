@@ -4,7 +4,7 @@
 
 使用sudo ./cktool -s 15 -f 30 -a 192.168.2.112 -p 42000
 或
-ffmpeg  -re -i dream-1080p.mkv -an -vcodec h264 -preset ultrafast   -profile High -x264opts "bframes=0:keyint=30" -f rtp rtp://192.168.50.189:43000 >test.sdp
+ffmpeg  -re -i dream-1080p.mkv -an -vcodec h264 -preset ultrafast -x264opts "bframes=0:keyint=30" -b:v 4000k -f rtp rtp://192.168.50.189:43000 >test.sdp
 
 -x264opts keyint=30   -tune zerolatency  
 -x264opts "bframes=0:keyint=30"
