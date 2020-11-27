@@ -8,4 +8,4 @@ sudo ./cktool -s 15 -f 30 -a 192.168.2.112 -p 42000 -w 1280 -h 720
 git add *
 git status
 git commit -m "增加了启动参数"
-git git push origin main
+git push origin main
