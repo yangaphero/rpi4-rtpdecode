@@ -248,6 +248,8 @@ int omx_display_xy(int flag, struct omx_state *st, int width, int height, int st
     config.fullscreen = OMX_FALSE;
     config.set = (OMX_DISPLAYSETTYPE)(OMX_DISPLAY_SET_TRANSFORM | OMX_DISPLAY_SET_DEST_RECT | OMX_DISPLAY_SET_FULLSCREEN | OMX_DISPLAY_SET_MODE);
     err |= OMX_SetParameter(st->video_render, OMX_IndexConfigDisplayRegion, &config);
+    
+    return err;
 }
 
 
@@ -338,17 +340,20 @@ int omx_display_enable(struct omx_state *st, int width, int height, int stride, 
 	}
 
 
-    printf("omx port definition(before): h=%d w=%d s=%d sh=%d enable=%d\n",
+    printf("omx port definition(before): h=%d w=%d s=%d sh=%d enable=%d color=%d\n",
         portdef.format.video.nFrameWidth,
         portdef.format.video.nFrameHeight,
         portdef.format.video.nStride,
         portdef.format.video.nSliceHeight,
-        portdef.bEnabled);
+        portdef.bEnabled,
+        portdef.format.video.eColorFormat);
 
-    portdef.format.video.nFrameWidth = width;
-    portdef.format.video.nFrameHeight = height;
-    portdef.format.video.nStride = stride;
-    portdef.format.video.nSliceHeight = height;
+    //portdef.format.video.eCompressionFormat = OMX_VIDEO_CodingUnused;
+    portdef.format.video.eColorFormat = OMX_COLOR_FormatYUV420PackedPlanar;
+    portdef.format.video.nFrameWidth = VCOS_ALIGN_UP(width,  32);//width;
+    portdef.format.video.nFrameHeight = VCOS_ALIGN_UP(height, 16);//height;
+    portdef.format.video.nStride = VCOS_ALIGN_UP(width,  32);//stride;
+    portdef.format.video.nSliceHeight = VCOS_ALIGN_UP(height, 16);//height;
     portdef.format.video.xFramerate = 30 << 16;
     portdef.bEnabled = 1;
     //

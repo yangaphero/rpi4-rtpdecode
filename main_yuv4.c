@@ -56,7 +56,6 @@ int parse_args(int argc, char** argv, appData* userData)
         switch (ret)
         {
             case 'h':
-                print_help:
                 fprintf (stderr, "%s <options>\n", argv[0]);
                 fprintf(stderr, "\t--help\n");
                 fprintf(stderr, "\t--port=number\n");
@@ -128,7 +127,7 @@ int main(int argc, char **argv)
     AVPacket av_packet;
     AVCodec *videoCodec = NULL;
     struct omx_state omx;
-    unsigned short before_seq;
+    unsigned short before_seq=0;
     int error_packet=0;
 
 	int tmp_len=0;//组包临时长度累加
@@ -156,8 +155,8 @@ int main(int argc, char **argv)
 
     //设置接收超时
     struct timeval tv_out;
-    tv_out.tv_sec = userData->timeout;//等待2秒
-    tv_out.tv_usec = 1000*500;
+    tv_out.tv_sec = userData->timeout;//等待n秒
+    tv_out.tv_usec = 1000*600;
     if(setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO,&tv_out, sizeof(tv_out)) == -1)
     {  
         fprintf(stderr, "[%s@%s,%d]:socket setsockopt error\n",__func__, __FILE__, __LINE__);
@@ -193,6 +192,9 @@ int main(int argc, char **argv)
         printf("Video codec: %s\n", videoCodec->name);
         userData->decContext = avcodec_alloc_context3(videoCodec);
     }
+
+    
+
     //初始化omx渲染器
     if (omx_init(&omx) != 0) 
     {
@@ -235,7 +237,7 @@ int main(int argc, char **argv)
                     before_seq=rtp_packet.seq;
                 }else
                 {
-                    printf("seq=%d before_seq=%d nal=%d\n",rtp_packet.seq, before_seq, rtp_packet.nal);
+                    printf("seq=%ld before_seq=%d nal=%d\n",rtp_packet.seq, before_seq, rtp_packet.nal);
                     error_packet=1;
                     before_seq=rtp_packet.seq;
                     continue;
@@ -308,14 +310,12 @@ int main(int argc, char **argv)
                         userData->start_flag = 1;
                     }
                 }
-                if (userData->start_flag){
+                if (userData->videoThreadId==0 && userData->start_flag){//加入userData->videoThreadId==0 是因为只在第一次将sps送入解码器，后面不再送入，解码器容易出现EAGAIN错误
                     //printf("put stap-a size=%d\n",av_packet.size);
                     avpacket_queue_put(&userData->videoPacketFifo, &av_packet);
                     
                 } 
-
             }
-
             else
             {//单个帧包
                 if  (rtp_packet.nal  == 7 )
@@ -373,9 +373,10 @@ int main(int argc, char **argv)
             if(userData->playerState & STATE_HAVEVIDEO)   {
                 avcodec_close(userData->decContext);
             }
+
             printf("5-正在重置内部参数\n");
             userData->start_flag = 0;
-            userData->videoThreadId=NULL;
+            userData->videoThreadId=0;
             userData->decContext->width=0;
             userData->decContext->height=0;
             userData->stop_flag = 0;
@@ -384,7 +385,7 @@ int main(int argc, char **argv)
         }
   
         //把初始化omx放到这里----当开始的时候：打开解码--初始化omxrender---打开解码线程
-        if(userData->videoThreadId==NULL && userData->start_flag)
+        if(userData->videoThreadId==0 && userData->start_flag)
         {
             printf("0-接收数据开始:\n");
 

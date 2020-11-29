@@ -18,6 +18,7 @@ typedef struct
 void avpacket_queue_init(AVPacketQueue *q);
 void avpacket_queue_release(AVPacketQueue *q);
 unsigned int avpacket_queue_size(AVPacketQueue *q);
+unsigned int avpacket_queue_count(AVPacketQueue *q);
 int avpacket_queue_put(AVPacketQueue *q, AVPacket *pkt);
 int avpacket_queue_get(AVPacketQueue *q, AVPacket *pkt, int block);
 

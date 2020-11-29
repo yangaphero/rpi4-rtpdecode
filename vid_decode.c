@@ -47,6 +47,56 @@ double difftimeval(const struct timeval *start, const struct timeval *end)
         return d/1000; //返回毫秒
 }
 
+int omxDisplay(void *params,AVFrame *avFrame)
+{
+    //下面 开始进行显示，
+    appData *userData = (appData*)params;
+    int renderFrameStride   = ALIGN_UP(userData->decContext->width, 32);
+    uint8_t* frameDataPtr   = avFrame->data[0];
+    int libavFrameStride    = avFrame->linesize[0];
+    int frameWidth          = userData->decContext->width;
+    int frameHeight         = ALIGN_UP(userData->decContext->height, 16);
+    int row;
+    void* pbuf; //omx render的视频显示缓存地址
+    uint32_t buf_len;//omx render的视频显示缓存长度
+    
+
+    //第1步-首先从omx render中取出yuv视频的缓冲地址pbuf和大小buf_len
+    if(omx_display_input_buffer(userData->omxState, &pbuf, &buf_len)!=0){
+        printf("omx_display_input_buffer failed\n"); 
+    }
+
+    //第2步-avFrame->data复制到pbuf地址空间，这里注意avFrame->pFrame->data[0] data[1] data[2]对应Y U V分量
+    for(row=0; row<frameHeight; row++)  // insert Y component into omx buffer
+    {
+        memcpy(pbuf, frameDataPtr, frameWidth);
+        pbuf += renderFrameStride;
+        frameDataPtr  += libavFrameStride;
+    }
+
+    frameDataPtr = avFrame->data[1];
+    libavFrameStride = avFrame->linesize[1];
+    for(row=0; row<frameHeight/2; row++)  // insert U component into omx buffer
+    {
+        memcpy(pbuf, frameDataPtr, frameWidth/2);
+        pbuf += renderFrameStride/2;
+        frameDataPtr  += libavFrameStride;
+    }
+
+    frameDataPtr = avFrame->data[2];
+    libavFrameStride = avFrame->linesize[2];
+    for(row=0; row<frameHeight/2; row++)  // insert V component into omx buffer
+    {
+        memcpy(pbuf, frameDataPtr, frameWidth/2);
+        pbuf += renderFrameStride/2;
+        frameDataPtr  += libavFrameStride;
+    }
+    //第3步-开始消耗（flush）掉视频缓存，也就是显示
+    if (omx_display_flush_buffer(userData->omxState, buf_len)!=0){
+        printf("omx_display_flush_buffer failed\n"); 
+    }
+    return 0;
+}
 
 
 void* handleVideoThread(void *params)
@@ -55,12 +105,10 @@ void* handleVideoThread(void *params)
     AVCodecContext *pCodecCtx = userData->decContext;
     AVFrame *pFrame;
     AVPacket pkt;
-    int frameFinished;
     unsigned int  frame_counter=0;
     static int first_packet = 1;
     int ret;
-    void* pbuf; //omx render的视频显示缓存地址
-    uint32_t buf_len;//omx render的视频显示缓存长度
+    
     struct timeval start,end;
 
     fprintf(stderr, "%s() - Info: video decoding thread started...\n", __FUNCTION__);
@@ -70,97 +118,26 @@ void* handleVideoThread(void *params)
         fprintf(stderr, "%s() - Error: failed to allocate video frame\n", __FUNCTION__);
         return (void*)1;
     }
+    av_init_packet(&pkt);
 
-    
+/*//测试用代码    
+AVPacket pkt2;
+av_init_packet(&pkt2);
+char *streamurl = "test.h264";
+//char *streamurl = "rtsp://192.168.50.174:8554";
+avformat_network_init();
+AVDictionary *options = NULL;           
+av_dict_set(&options, "protocol_whitelist", "file,udp,rtp,tcp,rtsp", 0);
+AVFormatContext *avFormatContext = avformat_alloc_context();
+avformat_open_input(&avFormatContext, streamurl, NULL, &options);
+avformat_find_stream_info(avFormatContext, NULL);
+av_dump_format(avFormatContext, 0, streamurl, 0);
+//av_read_frame(avFormatContext, &pkt);    
+*/
+
     while (1)
     {
-        if (avpacket_queue_get(&userData->videoPacketFifo, &pkt, 1) == 1)
-        {
-  
-            //printf("get pkt.size=%d\n",pkt.size);
-            //printf("queue.size=%d\n",avpacket_queue_size(&userData->videoPacketFifo));
-            gettimeofday(&end, NULL);  //获取结束时间
-            ret = avcodec_send_packet(pCodecCtx, &pkt);
-            if (ret < 0) {
-                //printf("avcodec: avcodec_send_packet error,"" packet=%zu bytes, ret=%d (%s)\n", pkt.size, ret, av_err2str(ret));
-                av_free_packet(&pkt);
-                continue;
-            }
-            ret = avcodec_receive_frame(pCodecCtx, pFrame);
-            if (ret == AVERROR(EAGAIN)) {
-                printf("EAGAIN packet=%zu bytes\n",pkt.size);
-                continue;
-            }
-            else if (ret < 0) {
-                printf("avcodec_receive_frame error ret=%d\n", ret);
-                av_free_packet(&pkt);
-                continue;
-            }
-            frameFinished = 1;
-            //下面是测试帧速率：
-            frame_counter++;
-            if(frame_counter % 25==0)  printf("frames=[%d] time=[%.0f] fps=[%.02f] queue=[%d]\n", frame_counter,difftimeval(&end, &start),frame_counter*1000/difftimeval(&end, &start),avpacket_queue_size(&userData->videoPacketFifo));
-            
-            if (first_packet)
-            {
-                
-                fprintf(stderr, "%s() - Info: video parameters dump:\n", __FUNCTION__);
-                fprintf(stderr, "\tY  component address %p pitch %d\n", (void*)pFrame->data[0], pFrame->linesize[0]);
-                fprintf(stderr, "\tU component address %p pitch %d\n", (void*)pFrame->data[1], pFrame->linesize[1]);
-                fprintf(stderr, "\tV component address %p pitch %d\n", (void*)pFrame->data[2], pFrame->linesize[2]);
-                fprintf(stderr, "\tAligned video size: %dx%d\n", pFrame->linesize[0], ALIGN_UP(userData->decContext->height,16));
-            }
-
-            //下面 开始进行显示，
-            //第1步-首先从omx render中取出yuv视频的缓冲地址pbuf和大小buf_len
-            if(omx_display_input_buffer(userData->omxState, &pbuf, &buf_len)!=0){
-                printf("omx_display_input_buffer failed\n"); 
-            }
-
-            //第2步-复制pFrame->data复制到pbuf地址空间，这里注意pFrame->pFrame->data[0] data[1] data[2]对应Y U V分量
-            int renderFrameStride   = ALIGN_UP(userData->decContext->width, 32);
-            uint8_t* frameDataPtr   = pFrame->data[0];
-            int libavFrameStride    = pFrame->linesize[0];
-            int frameWidth          = userData->decContext->width;
-            int frameHeight         = ALIGN_UP(userData->decContext->height, 16);
-            int row;
-      
-            for(row=0; row<frameHeight; row++)  // insert Y component into omx buffer
-            {
-                memcpy(pbuf, frameDataPtr, frameWidth);
-                pbuf += renderFrameStride;
-                frameDataPtr  += libavFrameStride;
-            }
-
-            frameDataPtr = pFrame->data[1];
-            libavFrameStride = pFrame->linesize[1];
-            for(row=0; row<frameHeight/2; row++)  // insert U component into omx buffer
-            {
-                memcpy(pbuf, frameDataPtr, frameWidth/2);
-                pbuf += renderFrameStride/2;
-                frameDataPtr  += libavFrameStride;
-            }
-
-            frameDataPtr = pFrame->data[2];
-            libavFrameStride = pFrame->linesize[2];
-            for(row=0; row<frameHeight/2; row++)  // insert V component into omx buffer
-            {
-                memcpy(pbuf, frameDataPtr, frameWidth/2);
-                pbuf += renderFrameStride/2;
-                frameDataPtr  += libavFrameStride;
-            }
-            //第3步-开始消耗（flush）掉视频缓存，也就是显示
-            if (omx_display_flush_buffer(userData->omxState, buf_len)!=0){
-                printf("omx_display_flush_buffer failed\n"); 
-            }
-            if(first_packet)   first_packet = 0; 
-            // Free video packet
-            av_free_packet(&pkt);
-        }
-        else
-        {
-            usleep(1000*20);
-        }
+        //判断是否退出线程
         if (userData->playerState & STATE_EXIT)  // videoThread user_exit 判断是否退出线程
         {
             
@@ -174,19 +151,68 @@ void* handleVideoThread(void *params)
                 if (ret == AVERROR_EOF){
                     avcodec_flush_buffers(pCodecCtx);
                     printf("avcodec_flush_buffers!\n");
+                    break;//退出解码循环
                 }
+                //送到omx进行显示
+                omxDisplay(userData,pFrame);
             }
             fprintf(stderr, "%s() - Info: STATE_EXIT flag has been set\n", __FUNCTION__);
-            break;//退出解码循环
+            goto lable_exit;
+        }
+        //下面解码->显示
+        if(avpacket_queue_count(&userData->videoPacketFifo)>2) 
+        {
+            if (avpacket_queue_get(&userData->videoPacketFifo, &pkt, 1) == 1)
+            {                
+                //printf("get pkt.size=%d\n",pkt.size);
+                //printf("queue.size=%d\n",avpacket_queue_size(&userData->videoPacketFifo));
+                
+                gettimeofday(&end, NULL);  //获取结束时间
+                ret = avcodec_send_packet(userData->decContext, &pkt);
+                if (ret < 0) {
+                    //printf("avcodec: avcodec_send_packet error,"" packet=%zu bytes, ret=%d (%s)\n", pkt.size, ret, av_err2str(ret));
+                    av_packet_unref(&pkt);
+                    continue;
+                }
+                ret = avcodec_receive_frame(userData->decContext, pFrame);
+                if (ret == AVERROR(EAGAIN)) {
+                    printf("EAGAIN packet=%zu bytes\n",pkt.size);
+                    //for(int i=0;i<40;i++) printf("%02x ",pkt.data[i]); printf("\n");
+                    continue;
+                }
+                else if (ret < 0) {
+                    printf("avcodec_receive_frame error ret=%d\n", ret);
+                    av_packet_unref(&pkt);
+                    continue;
+                }
+               
+                //下面是测试帧速率：
+                frame_counter++;
+                if(frame_counter % 25==0)  printf("frames=[%d] time=[%.0f] fps=[%.02f] queue=[%d][%d]\n", frame_counter,difftimeval(&end, &start),frame_counter*1000/difftimeval(&end, &start),avpacket_queue_count(&userData->videoPacketFifo), avpacket_queue_size(&userData->videoPacketFifo));
+                
+                if (first_packet)
+                {
+                    
+                    fprintf(stderr, "%s() - Info: video parameters dump:\n", __FUNCTION__);
+                    fprintf(stderr, "\tY  component address %p pitch %d\n", (void*)pFrame->data[0], pFrame->linesize[0]);
+                    fprintf(stderr, "\tU component address %p pitch %d\n", (void*)pFrame->data[1], pFrame->linesize[1]);
+                    fprintf(stderr, "\tV component address %p pitch %d\n", (void*)pFrame->data[2], pFrame->linesize[2]);
+                    fprintf(stderr, "\tAligned video size: %dx%d\n", pFrame->linesize[0], ALIGN_UP(userData->decContext->height,16));
+                }
+                //送到omx进行显示
+                omxDisplay(userData,pFrame);
+        
+                if(first_packet)   first_packet = 0; 
+                // Free video packet
+                av_packet_unref(&pkt);
+            }
         }
 
     }
     
-  
-
+    lable_exit:
     // Free the YUV frame
     av_free(pFrame);
-
     userData->playerState &= ~STATE_HAVEVIDEO;
     fprintf(stderr, "%s() - Info: video decoding thread finished\n", __FUNCTION__);
 

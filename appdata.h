@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <libavformat/avformat.h>
 #include <libavresample/avresample.h>
+#include <sys/time.h>
 
 #include "bcm_host.h"
 #include "avqueue.h"

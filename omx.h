@@ -18,6 +18,7 @@
 #include <IL/OMX_Core.h>
 #include <IL/OMX_Video.h>
 #include <IL/OMX_Broadcom.h>
+#include <IL/OMX_Component.h>
 
 #include <pthread.h>
 #include <stdint.h>

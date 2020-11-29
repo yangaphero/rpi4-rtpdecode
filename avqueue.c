@@ -18,7 +18,7 @@ static void avpacket_queue_flush(AVPacketQueue *q)
     for (pkt = q->first_pkt; pkt != NULL; pkt = pkt1)
     {
         pkt1 = pkt->next;
-        av_free_packet(&pkt->pkt);
+        av_packet_unref(&pkt->pkt);
         av_freep(&pkt);
     }
 
@@ -60,12 +60,13 @@ int avpacket_queue_put(AVPacketQueue *q, AVPacket *pkt)
         return -1;
     }
 
+/*
     // duplicate the packet
     if (av_dup_packet(pkt) < 0)
     {
         return -1;
     }
-
+*/
     if ((pkt1 = (AVPacketList *)av_malloc(sizeof(AVPacketList))) == NULL)
         return -1;
 
@@ -129,4 +130,14 @@ int avpacket_queue_get(AVPacketQueue *q, AVPacket *pkt, int block)
     pthread_mutex_unlock(&q->mutex);
 
     return ret;
+}
+
+
+unsigned int avpacket_queue_count(AVPacketQueue *q)
+{
+    unsigned int size;
+    pthread_mutex_lock(&q->mutex);
+    size = q->nb_packets;
+    pthread_mutex_unlock(&q->mutex);
+    return size;
 }

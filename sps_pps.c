@@ -100,7 +100,7 @@ static int get_bits(void *h, int n)
     uint8_t *cur_char = NULL;
     uint8_t nbyte;
     uint8_t shift;
-    uint32_t result;
+    uint32_t result=0;
     uint64_t ret = 0;
 
     if(NULL == ptr)
@@ -918,7 +918,7 @@ int h264_get_level_idc(SPS *sps_ptr)
 int h264_get_framerates(float *framerate,SPS *sps_ptr)
 {
     //int fr;
-    int fr_int;
+    int fr_int=0;
     if(sps_ptr->vui_parameters.timing_info_present_flag)
     {
         if(sps_ptr->frame_mbs_only_flag)
@@ -986,7 +986,7 @@ int h264_get_framerates(float *framerate,SPS *sps_ptr)
 int h264_get_framerate(SPS *sps_ptr)
 {
     //int fr;
-    int fr_int;
+    int fr_int=0;
     if(sps_ptr->vui_parameters.timing_info_present_flag)
     {
         fr_int = sps_ptr->vui_parameters.time_scale / sps_ptr->vui_parameters.num_units_in_tick / 2;
